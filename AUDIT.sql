@@ -37,17 +37,17 @@
 *   audit_log_op_idx
 *   audit_log_table_idx
 *   audit_log_date_idx
-*   audit_log_history_idx
+*   audit_log_audit_idx
 *
 * FUNCTIONS:
-*   create_schema_history_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_schema_audit_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_log_trigger(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_table_history_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
+*   create_table_audit_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_log_trigger(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
-*   drop_schema_history_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
+*   drop_schema_audit_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_table(table_name VARCHAR, target_schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
-*   drop_table_history_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
+*   drop_table_audit_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_relations(table_name VARCHAR, target_schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   fkey_schema_state(target_schema_name VARCHAR, original_schema_name VARCHAR DEFAULT 'public', 
@@ -87,7 +87,7 @@ CREATE TABLE audit.audit_log
   table_operation VARCHAR(10),
   table_name VARCHAR(30),
   db_date TIMESTAMP,
-  history_id INTEGER,
+  audit_id INTEGER,
   table_content JSON
 );
 
@@ -98,7 +98,7 @@ ADD CONSTRAINT audit_log_pk PRIMARY KEY (id);
 CREATE INDEX audit_log_op_idx ON audit.audit_log USING BTREE (table_operation);
 CREATE INDEX audit_log_table_idx ON audit.audit_log USING BTREE (table_name);
 CREATE INDEX audit_log_date_idx ON audit.audit_log USING BTREE (db_date);
-CREATE INDEX audit_log_history_idx ON audit.audit_log USING BTREE (history_id);
+CREATE INDEX audit_log_audit_idx ON audit.audit_log USING BTREE (audit_id);
 
 
 /**********************************************************
@@ -165,57 +165,57 @@ LANGUAGE plpgsql;
 
 
 /**********************************************************
-* HISTORY ID COLUMN
+* AUDIT ID COLUMN
 *
-* Add an extra column 'history_id' to a table to trace 
+* Add an extra column 'audit_id' to a table to trace 
 * changes on rows over time.
 ***********************************************************/
--- add column 'history_id' to a table
-CREATE OR REPLACE FUNCTION audit.create_table_history_id(
+-- add column 'audit_id' to a table
+CREATE OR REPLACE FUNCTION audit.create_table_audit_id(
   table_name VARCHAR,
   schema_name VARCHAR DEFAULT 'public'
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN history_id SERIAL', schema_name, table_name);
+  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN audit_id SERIAL', schema_name, table_name);
 END;
 $$
 LANGUAGE plpgsql;
 
--- perform create_table_history_id on multiple tables in one schema
-CREATE OR REPLACE FUNCTION audit.create_schema_history_id(
+-- perform create_table_audit_id on multiple tables in one schema
+CREATE OR REPLACE FUNCTION audit.create_schema_audit_id(
   schema_name VARCHAR DEFAULT 'public',
   except_tables VARCHAR[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE 'SELECT audit.create_table_history_id(tablename::varchar, schemaname::varchar) FROM pg_tables 
+  EXECUTE 'SELECT audit.create_table_audit_id(tablename::varchar, schemaname::varchar) FROM pg_tables 
              WHERE schemaname = $1 AND tablename <> ALL ($2)' 
              USING schema_name, except_tables;
 END;
 $$
 LANGUAGE plpgsql;
 
--- drop column 'history_id' from a table
-CREATE OR REPLACE FUNCTION audit.drop_table_history_id(
+-- drop column 'audit_id' from a table
+CREATE OR REPLACE FUNCTION audit.drop_table_audit_id(
   table_name VARCHAR,
   schema_name VARCHAR DEFAULT 'public'
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('ALTER TABLE %I.%I DROP COLUMN history_id', schema_name, table_name);
+  EXECUTE format('ALTER TABLE %I.%I DROP COLUMN audit_id', schema_name, table_name);
 END;
 $$
 LANGUAGE plpgsql;
 
--- perform drop_table_history_id on multiple tables in one schema
-CREATE OR REPLACE FUNCTION audit.drop_schema_history_id(
+-- perform drop_table_audit_id on multiple tables in one schema
+CREATE OR REPLACE FUNCTION audit.drop_schema_audit_id(
   schema_name VARCHAR DEFAULT 'public',
   except_tables VARCHAR[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE 'SELECT audit.drop_table_history_id(tablename::varchar, schemaname::varchar) FROM pg_tables 
+  EXECUTE 'SELECT audit.drop_table_audit_id(tablename::varchar, schemaname::varchar) FROM pg_tables 
              WHERE schemaname = $1 AND tablename <> ALL ($2)' 
              USING schema_name, except_tables;
 END;
@@ -236,12 +236,12 @@ DECLARE
   rec RECORD;
 BEGIN
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, $4)' USING TG_OP, TG_TABLE_NAME, NEW.history_id, row_to_json(NEW);
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, $4)' USING TG_OP, TG_TABLE_NAME, NEW.audit_id, row_to_json(NEW);
   ELSIF TG_OP = 'DELETE' THEN
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, OLD.history_id;
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, OLD.audit_id;
   ELSIF TG_OP = 'TRUNCATE' THEN
     FOR rec IN EXECUTE format('SELECT * FROM %I', TG_TABLE_NAME) LOOP
-      EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, rec.history_id;
+      EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, rec.audit_id;
 	END LOOP;
   END IF;
 
@@ -267,7 +267,7 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN EXECUTE format('SELECT * FROM %I.%I', schema_name, table_name) LOOP
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now(), $3, $4)' USING 'INSERT', table_name, rec.history_id, row_to_json(rec);
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now(), $3, $4)' USING 'INSERT', table_name, rec.audit_id, row_to_json(rec);
   END LOOP;
 END;
 $$
@@ -381,8 +381,8 @@ BEGIN
                           WHERE table_name = $1
                           AND db_date = $2
                           AND (table_operation = ''INSERT'' OR table_operation = ''UPDATE'')
-                          AND history_id NOT IN (
-                            SELECT history_id FROM audit.audit_log
+                          AND audit_id NOT IN (
+                            SELECT audit_id FROM audit.audit_log
                               WHERE table_name = $1
                               AND (db_date > $2 AND db_date <= $3)
                           )
@@ -416,7 +416,7 @@ LANGUAGE plpgsql;
 * If a table state is produced as a table it will not have
 * a primary key. The primary key might be reconstruced by
 * querying the recent primary key of the table. If no primary
-* can be redefined the history_id column will be used.
+* can be redefined the audit_id column will be used.
 ***********************************************************/
 -- define a primary key for a produced table
 CREATE OR REPLACE FUNCTION audit.pkey_table_state( 
@@ -437,8 +437,8 @@ BEGIN
                INTO pkey_columns USING '"' || original_schema_name || '".' || table_name;
 
   IF length(pkey_columns) = 0 THEN
-    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''history_id'' will be used as primary key.', table_name;
-    pkey_columns := 'history_id';
+    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''audit_id'' will be used as primary key.', table_name;
+    pkey_columns := 'audit_id';
   END IF;
 
   EXECUTE format('ALTER TABLE %I.%I ADD CONSTRAINT %I_PK PRIMARY KEY (' || pkey_columns || ')', target_schema_name, table_name, table_name);
