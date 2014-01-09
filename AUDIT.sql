@@ -2,7 +2,7 @@
 --
 -- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
 --
---              This skript is free software under the LGPL Version 2.1.
+--              This skript is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
 --              http://www.gnu.org/copyleft/lgpl.html
 --              for more details.
@@ -10,17 +10,17 @@
 -- About:
 -- This package allows auditing and versioning for PostgreSQL databases.
 --
--- Thanks to: 
+-- Special thanks to: 
 -- Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
+-- Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
 -- Ollyc (Stackoverflow) --> Query to list all foreign keys of a table
 -- Denis de Bernardy (Stackoverflow, mesoconcepts) --> Query to list all indexes of a table
--- Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                       | Author
--- 1.0.0     2014-01-06   alpha version                       FKun
+-- 1.0.0     2014-01-09   alpha version                       FKun
 --
 
 /**********************************************************
@@ -40,13 +40,17 @@
 *   audit_log_audit_idx
 *
 * FUNCTIONS:
+*   create_schema_audit(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_log_trigger(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_table_audit(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_audit_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_log_trigger(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
+*   drop_schema_audit(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_audit_id(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name VARCHAR DEFAULT 'public', except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_table(table_name VARCHAR, target_schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
+*   drop_table_audit(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_audit_id(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name VARCHAR, schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_relations(table_name VARCHAR, target_schema_name VARCHAR DEFAULT 'public') RETURNS SETOF VOID
@@ -54,7 +58,8 @@
 *     except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   fkey_table_state(table_name VARCHAR, target_schema_name VARCHAR, original_schema_name VARCHAR DEFAULT 'public') 
 *     RETURNS SETOF VOID
-*   get_log_entries(queried_date TIMESTAMP, search_date TIMESTAMP, original_table_name VARCHAR) RETURNS SETOF INTEGER
+*   get_log_entries(queried_date TIMESTAMP, search_date TIMESTAMP, original_table_name VARCHAR, original_schema_name VARCHAR)
+*     RETURNS SETOF INTEGER
 *   index_schema_state(target_schema_name VARCHAR, original_schema_name VARCHAR DEFAULT 'public', 
 *     except_tables VARCHAR[] DEFAULT '{}') RETURNS SETOF VOID
 *   index_table_state(table_name VARCHAR, target_schema_name VARCHAR, original_schema_name VARCHAR DEFAULT 'public') 
@@ -85,7 +90,8 @@ CREATE TABLE audit.audit_log
 (
   id serial,
   table_operation VARCHAR(10),
-  table_name VARCHAR(30),
+  schema_name VARCHAR(50)
+  table_name VARCHAR(50),
   db_date TIMESTAMP,
   audit_id INTEGER,
   table_content JSON
@@ -95,10 +101,83 @@ ALTER TABLE audit.audit_log
 ADD CONSTRAINT audit_log_pk PRIMARY KEY (id);
 
 -- create indexes on all columns that are queried later
-CREATE INDEX audit_log_op_idx ON audit.audit_log USING BTREE (table_operation);
-CREATE INDEX audit_log_table_idx ON audit.audit_log USING BTREE (table_name);
-CREATE INDEX audit_log_date_idx ON audit.audit_log USING BTREE (db_date);
-CREATE INDEX audit_log_audit_idx ON audit.audit_log USING BTREE (audit_id);
+CREATE INDEX audit_log_op_idx ON audit.audit_log (table_operation);
+CREATE INDEX audit_log_table_idx ON audit.audit_log (table_name, schema_name);
+CREATE INDEX audit_log_date_idx ON audit.audit_log (db_date);
+CREATE INDEX audit_log_audit_idx ON audit.audit_log (audit_id);
+
+
+/**********************************************************
+* TABLE AUDIT
+*
+* Enables Audit for a specified table.
+***********************************************************/
+-- create Audit for one table
+CREATE OR REPLACE FUNCTION audit.create_table_audit( 
+  table_name VARCHAR,
+  schema_name VARCHAR DEFAULT 'public'
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  -- create log trigger
+  PERFORM audit.create_table_log_trigger(table_name, schema_name);
+
+  -- add audit_id column
+  PERFORM audit.create_table_audit_id(table_name, schema_name);
+
+  -- log all entires of the table
+  PERFORM audit.log_table_state(table_name, schema_name);
+END;
+$$
+LANGUAGE plpgsql;
+
+-- perform create_table_audit on multiple tables in one schema
+CREATE OR REPLACE FUNCTION audit.create_schema_audit(
+  schema_name VARCHAR DEFAULT 'public',
+  except_tables VARCHAR[] DEFAULT '{}'
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  EXECUTE 'SELECT audit.create_table_audit(tablename::varchar, schemaname::varchar) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING schema_name, except_tables;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- drop Audit for one table
+CREATE OR REPLACE FUNCTION audit.drop_table_audit(
+  t_name VARCHAR,
+  s_name VARCHAR DEFAULT 'public' 
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  -- delete all entires of table in audit_log table
+  EXECUTE 'DELETE FROM audit.audit_log WHERE table_name = $1 AND schema_name = $2'
+             USING t_name, s_name;
+
+  -- drop audit_id column
+  PERFORM audit.drop_table_audit_id(t_name, s_name);
+
+  -- drop log trigger
+  PERFORM audit.drop_table_log_trigger(t_name, s_name);
+END;
+$$
+LANGUAGE plpgsql;
+
+-- perform drop_table_audit on multiple tables in one schema
+CREATE OR REPLACE FUNCTION audit.drop_schema_audit(
+  schema_name VARCHAR DEFAULT 'public',
+  except_tables VARCHAR[] DEFAULT '{}'
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  EXECUTE 'SELECT audit.drop_table_audit(tablename::varchar, schemaname::varchar) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING schema_name, except_tables;
+END;
+$$
+LANGUAGE plpgsql;
 
 
 /**********************************************************
@@ -236,12 +315,15 @@ DECLARE
   rec RECORD;
 BEGIN
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, $4)' USING TG_OP, TG_TABLE_NAME, NEW.audit_id, row_to_json(NEW);
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.AUDIT_LOG_ID_SEQ''), $1, $2, $3, now()::timestamp, $4, $5)' 
+               USING TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, NEW.audit_id, row_to_json(NEW);
   ELSIF TG_OP = 'DELETE' THEN
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, OLD.audit_id;
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.AUDIT_LOG_ID_SEQ''), $1, $2, $3, now()::timestamp, $4, NULL)' 
+               USING TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, OLD.audit_id;
   ELSIF TG_OP = 'TRUNCATE' THEN
     FOR rec IN EXECUTE format('SELECT * FROM %I', TG_TABLE_NAME) LOOP
-      EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now()::timestamp, $3, NULL)' USING TG_OP, TG_TABLE_NAME, rec.audit_id;
+      EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.AUDIT_LOG_ID_SEQ''), $1, $2, $3, now()::timestamp, $4, NULL)' 
+                 USING TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, rec.audit_id;
 	END LOOP;
   END IF;
 
@@ -267,7 +349,7 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN EXECUTE format('SELECT * FROM %I.%I', schema_name, table_name) LOOP
-    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.CHANGELOG_ID_SEQ''), $1, $2, now(), $3, $4)' USING 'INSERT', table_name, rec.audit_id, row_to_json(rec);
+    EXECUTE 'INSERT INTO audit.audit_log VALUES (nextval(''audit.AUDIT_LOG_ID_SEQ''), $1, $2, now(), $3, $4)' USING 'INSERT', table_name, rec.audit_id, row_to_json(rec);
   END LOOP;
 END;
 $$
@@ -335,7 +417,8 @@ BEGIN
                     upper(target_table_type), original_table_name, target_schema_name, upper(target_table_type);
   ELSE
     -- check if logging entries exist in the audit_log table
-    EXECUTE 'SELECT 1 FROM audit.audit_log WHERE table_name = $1 LIMIT 1' INTO logged USING original_table_name;
+    EXECUTE 'SELECT 1 FROM audit.audit_log WHERE table_name = $1 AND schema_name = $2 LIMIT 1'
+               INTO logged USING original_table_name, original_schema_name;
 
     IF logged IS NOT NULL THEN
       -- let's go back in time - produce a table state at a given date
@@ -344,14 +427,16 @@ BEGIN
                    SELECT * FROM json_populate_recordset(null::%I.%I,(
                      SELECT json_agg(table_content) FROM audit.audit_log 
                        WHERE id IN 
-                         (SELECT audit.get_log_entries(%L, db_date, %L)
+                         (SELECT audit.get_log_entries(%L, db_date, %L, %L)
                             FROM audit.audit_log 
                               WHERE db_date <= %L 
                               AND table_name = %L
                               GROUP BY db_date ORDER BY db_date DESC
                           )
                      ))',
-                target_schema_name, original_table_name, original_schema_name, original_table_name, queried_date, original_table_name, queried_date, original_table_name);
+                target_schema_name, original_table_name, original_schema_name, original_table_name, 
+				queried_date, original_table_name, original_schema_name,
+				queried_date, original_table_name);
       ELSE
         RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', target_table_type;
       END IF;
@@ -373,21 +458,23 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION audit.get_log_entries(
   queried_date TIMESTAMP,
   search_date TIMESTAMP,
-  original_table_name VARCHAR
+  original_table_name VARCHAR,
+  original_schema_name VARCHAR
   ) RETURNS SETOF INTEGER AS
 $$
 BEGIN
   RETURN QUERY EXECUTE 'SELECT id FROM audit.audit_log
-                          WHERE table_name = $1
-                          AND db_date = $2
+                          WHERE table_name = $1 AND schema_name = $2
+                          AND db_date = $3
                           AND (table_operation = ''INSERT'' OR table_operation = ''UPDATE'')
                           AND audit_id NOT IN (
                             SELECT audit_id FROM audit.audit_log
-                              WHERE table_name = $1
-                              AND (db_date > $2 AND db_date <= $3)
+                              WHERE table_name = $1 AND schema_name = $2
+                              AND (db_date > $3 AND db_date <= $4)
                           )
                           ORDER BY id ASC'
-                          USING original_table_name, search_date, queried_date;
+                          USING original_table_name, original_schema_name, 
+                                search_date, queried_date;
 END;
 $$
 LANGUAGE plpgsql;
