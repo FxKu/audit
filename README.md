@@ -76,7 +76,7 @@ now reference the tools where I looked up the details:
 5. How To
 -----------------
 
-5.1. Add Audit to a database
+### 5.1. Add Audit to a database
 
 Run the `AUDIT_SETUP.sql` script to create the schema `audit` with tables
 and functions. `AUDIT_VERSIONING.sql` is necessary to restore past table
@@ -85,7 +85,7 @@ in the schema, where the tables / schema state has been restored
 (in order they have been restored as tables).
 
 
-5.2. Start Audit
+### 5.2. Start Audit
 
 The functions can be used to intialize auditing for single tables or a 
 complete schema e.g.
@@ -107,13 +107,13 @@ ATTENTION: It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you beginn or continue
 to work with the database and change contents define the present state
 as the initial versioning state by executing the procedure
-`audit.log_table_state` (or audit.log_schema_state'). For each row in the
+`audit.log_table_state` (or `audit.log_schema_state`). For each row in the
 audited tables another row will be written to the audit_log table
 telling the system that it has been 'inserted' at the timestamp the
 procedure has been executed.
 
 
-5.3. Have a look at the logged information
+### 5.3. Have a look at the logged information
 
 For example, if you have run an UPDATE command on 'table_A' changing the
 value of some row of 'column_B' to 'new_value' the following entries will 
@@ -138,7 +138,7 @@ would cause logging of the complete rows while INSERTs would leave the
 column table_content blank.
 
 
-5.4. Restore a past state of your database
+### 5.4. Restore a past state of your database
 
 A table state is restored with the procedure `restore_table_state`. A 
 whole database state might be restored with `restore_schema_state`.
@@ -152,7 +152,7 @@ I______U___D__I___U_x____U__I__D__now [Operations] <br/>
 I = Insert, U = Update, D = Delete, x = the date I'm interested in
 
 
-5.4.1. Fetching audit_ids
+#### 5.4.1. Fetching audit_ids
  
 I need to know which entries were valid at the date I've requested (x).
 I look up the transaction_log table to see if I could find an entry for
@@ -179,7 +179,7 @@ Timestamp 1. OK, INSERT - I'm finally done. Again: Get the IDs, leave out
 IDs that appear during the last timestamps.
 
 
-5.4.2. Generate entries from JSON logs
+#### 5.4.2. Generate entries from JSON logs
 
 Ok, now that I know, which entries were valid at date x let's perform the 
 PostgreSQL function json_populate_recordset on the column table_content
@@ -214,7 +214,7 @@ If there would be more timestamps we would continue this procedure
 until we have the correct state of our records for date x.
 
 
-5.5. Work with the past state
+### 5.5. Work with the past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
@@ -270,14 +270,10 @@ fkunde@virtualcitysystems.de
 8. Special Thanks
 -----------------
 
-Hans-Jürgen Schönig (Cybertech)
-  --> recommend to use a generic JSON auditing
-Claus Nagel (virtualcitySYSTEMS)
-  --> conceptual advices about logging
-Ollyc (Stackoverflow)
-  --> Query to list all foreign keys of a table
-Denis de Bernardy (Stackoverflow, mesoconcepts)
-  --> Query to list all indexes of a table
+* Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
+* Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
+* Ollyc (Stackoverflow) --> Query to list all foreign keys of a table
+* Denis de Bernardy (Stackoverflow, mesoconcepts) --> Query to list all indexes of a table
 
 
 9. Disclaimer
