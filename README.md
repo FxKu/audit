@@ -68,12 +68,9 @@ them *shameonme* and can not tell you exactly how they differ from Audit.
 I might have directly copied some elements of these tools, therefore I'm
 now reference the tools where I looked up the details:
 
-* 'Audit trigger 91plus' by ringerc 
-     (http://wiki.postgresql.org/wiki/Audit_trigger_91plus)
-* 'tablelog' by Andreas Scherbaum 
-     (http://pgfoundry.org/projects/tablelog/)
-* 'Cyan Audit' by Moshe Jacobsen
-     http://pgxn.org/dist/cyanaudit/
+* [Audit trigger 91plus](http://wiki.postgresql.org/wiki/Audit_trigger_91plus) by ringerc
+* [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum
+* [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen
 
 
 5. How To
@@ -81,9 +78,9 @@ now reference the tools where I looked up the details:
 
 5.1. Add Audit to a database
 
-Run the AUDIT_SETUP.sql script to create the schema 'audit' with tables
-and functions. AUDIT_VERSIONING.sql is necessary to restore past table
-states and AUDIT_INDEX_SCHEMA includes funtions to define constraints
+Run the `AUDIT_SETUP.sql` script to create the schema `audit` with tables
+and functions. `AUDIT_VERSIONING.sql` is necessary to restore past table
+states and `AUDIT_INDEX_SCHEMA.sql` includes funtions to define constraints
 in the schema, where the tables / schema state has been restored 
 (in order they have been restored as tables).
 
@@ -93,12 +90,12 @@ in the schema, where the tables / schema state has been restored
 The functions can be used to intialize auditing for single tables or a 
 complete schema e.g.
 
-SELECT audit.create_schema_audit('public', ARRAY['not_this_table'], ['not_that_table']);
+`SELECT audit.create_schema_audit('public', ARRAY['not_this_table'], ['not_that_table']);`
 
 This function creates triggers and an additional column named audit_id
 for all tables in the 'public' schema except for tables 'not_this_table' 
 and 'not_that_table'. Now changes on the audited tables write information
-to the tables audit.transaction_log and audit.audit_log.
+to the tables 'audit.transaction_log' and 'audit.audit_log'.
 
 When setting up a new database I would recommend to start audit after
 bulk imports. Otherwise the build import will be slower and several 
@@ -110,7 +107,7 @@ ATTENTION: It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you beginn or continue
 to work with the database and change contents define the present state
 as the initial versioning state by executing the procedure
-'audit.log_table_state' (or audit.log_schema_state'). For each row in the
+`audit.log_table_state` (or audit.log_schema_state'). For each row in the
 audited tables another row will be written to the audit_log table
 telling the system that it has been 'inserted' at the timestamp the
 procedure has been executed.
@@ -143,16 +140,15 @@ column table_content blank.
 
 5.4. Restore a past state of your database
 
-A table state is restored with the procedure 'restore_table_state'. A 
-whole database state might be restored with 'restore_schema_state'.
+A table state is restored with the procedure `restore_table_state`. A 
+whole database state might be restored with `restore_schema_state`.
 The result is written to another schema defined by the user. It can 
 defined as a VIEW (default) or a TABLE.
 
 How does this work? Well imagine a time line like this:
 
-1''''''2'''3''4'''5'x''''6''7''8''''9 [Timestamps] <br/>
-I......U...D..I...U.|....U..I..D..now [Operations] <br/>
-|______|___|__|___|_|____|__|__|____| <br/>
+1______2___3__4___5______6__7__8____9 [Timestamps] <br/>
+I______U___D__I___U_x____U__I__D__now [Operations] <br/>
 I = Insert, U = Update, D = Delete, x = the date I'm interested in
 
 
@@ -188,7 +184,7 @@ IDs that appear during the last timestamps.
 Ok, now that I know, which entries were valid at date x let's perform the 
 PostgreSQL function json_populate_recordset on the column table_content
 in the audit_log table using the fetched audit_ids to transform JSON back
-to tables. But wait, in some rows I only got this {"column_B":"old_value"}. 
+to tables. But wait, in some rows I only got this `{"column_B":"old_value"}`. 
 Well of course, it's just the change not the complete row. What to do?
 
 There are two ways to receive the complete information. Either the row 
@@ -210,9 +206,9 @@ But timestamp 6 might appear, if the record we want to reconstruct has
 been updated there. If so, we have to replace all elements of our JSON
 object that are found in the older JSON log e.g.
 
-JSON log  {"id":1;"column_B":"newest_value";"audit_id":70}  meets
-JSON diff {"column_B":"new_value"}                          produces a new
-JSON log  {"id":1;"column_B":"new_value";"audit_id":70}
+JSON log `{"id":1;"column_B":"newest_value";"audit_id":70}` meets JSON 
+diff `{"column_B":"new_value"}` produces a new JSON log
+`{"id":1;"column_B":"new_value";"audit_id":70}`
 
 If there would be more timestamps we would continue this procedure 
 until we have the correct state of our records for date x.
@@ -224,7 +220,7 @@ If past states were restored as tables they do not have primary keys
 or indexes assigned to them. References between tables are lost as well. 
 If the user wants to work on the restored table or database state - 
 like he would do with the recent state - he can use the procedures
-'pkey_table_state', 'fkey_table_state' and 'index_table_state'. These 
+`pkey_table_state`, `fkey_table_state` and `index_table_state`. These 
 procedures create primary keys, foreign keys and indexes on behalf of 
 the recent constraints defined in the certain schema (e.g. 'public'). 
 If table and/or database structures have changed fundamentally over time 
@@ -251,7 +247,7 @@ However, here are some plans I have for the near future:
 * Develop a method to revert specific changes e.g. connected to a 
   transaction_id, date, user etc. I've already developped procedures
   to merge a whole schema into another schema, e.g. to be able to do 
-  a full rollback on a database (see AUDIT_REVERT.sql). But their
+  a full rollback on a database (see `AUDIT_REVERT.sql`). But their
   approach is a bit over the top when I just want to revert one 
   transaction.
 * Have a more intelligent way to generate JSON records, e.g. if several
