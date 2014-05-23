@@ -29,7 +29,7 @@ Public License Version 3.0. See the file LICENSE for more details.
 2. About
 --------
 
-Audit is a bunch of PL/pgSQL scripts that enable auditing of PostgreSQL
+Audit is a bunch of PL/pgSQL scripts that enable auditing of a PostgreSQL
 database. I take extensive use of JSON functions to log my data. Thus
 version 9.3 or higher is needed.
 
@@ -43,10 +43,8 @@ information on the data types. This is very handy when creating a past
 table state. I think the same applies to the PostgreSQL extension hstore
 so Audit could also be realized using hstore except JSON.
 
-For further reading please consider that Audit has not been tested or
-or benchmarked a lot by myself. The processes described above are working
-to my satisfaction but maybe you expect more or something different. See
-also section 5.
+For further reading please consider that Audit has neither been tested nor
+benchmarked a lot by myself.
 
 
 3. System requirements
@@ -59,14 +57,14 @@ also section 5.
 --------------------------
 
 The auditing approach of Audit is nothing new. Define triggers to log
-changes on your database is a well known practice. There are other tools
+changes in your database is a well known practice. There are other tools
 out there which can also be used I guess. When I started the development
 for Audit I wasn't aware of that there are so many solutions out there
 (and new ones popping up every once in while). I haven't tested any of 
 them *shameonme* and can not tell you exactly how they differ from Audit.
 
 I might have directly copied some elements of these tools, therefore I'm
-now reference the tools where I looked up the details:
+now referencing tools where I looked up details:
 
 * [Audit trigger 91plus](http://wiki.postgresql.org/wiki/Audit_trigger_91plus) by ringerc
 * [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum
@@ -81,8 +79,8 @@ now reference the tools where I looked up the details:
 Run the `AUDIT_SETUP.sql` script to create the schema `audit` with tables
 and functions. `AUDIT_VERSIONING.sql` is necessary to restore past table
 states and `AUDIT_INDEX_SCHEMA.sql` includes funtions to define constraints
-in the schema, where the tables / schema state has been restored 
-(in order they have been restored as tables).
+in the schema where the tables / schema state has been restored (in order 
+they have been restored as tables).
 
 
 ### 5.2. Start Audit
@@ -98,14 +96,13 @@ and 'not_that_table'. Now changes on the audited tables write information
 to the tables 'audit.transaction_log' and 'audit.audit_log'.
 
 When setting up a new database I would recommend to start audit after
-bulk imports. Otherwise the build import will be slower and several 
-different timestamps might appear in the audit_log table. The more 
-timestamps are recorded the more queries are necessary to restore a 
-table state.
+bulk imports. Otherwise the import will be slower and several different 
+timestamps might appear in the audit_log table. The more timestamps are 
+recorded the more queries are necessary to restore a table state.
 
 ATTENTION: It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you beginn or continue
-to work with the database and change contents define the present state
+to work with the database and change contents, define the present state
 as the initial versioning state by executing the procedure
 `audit.log_table_state` (or `audit.log_schema_state`). For each row in the
 audited tables another row will be written to the audit_log table
@@ -116,7 +113,7 @@ procedure has been executed.
 ### 5.3. Have a look at the logged information
 
 For example, if you have run an UPDATE command on 'table_A' changing the
-value of some row of 'column_B' to 'new_value' the following entries will 
+value of some rows of 'column_B' to 'new_value' the following entries will 
 appear in the log tables:
 
 TRANSACTION_LOG
@@ -134,16 +131,16 @@ AUDIT_LOG
 | 502 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 72       | {"column_B":"old_value"} |
 
 As you can see only the changes are logged. DELETE and TRUNCATE commands
-would cause logging of the complete rows while INSERTs would leave the
-column table_content blank.
+would cause logging of the complete rows while INSERTs would leave a 
+blank field for the 'table_content' column.
 
 
 ### 5.4. Restore a past state of your database
 
-A table state is restored with the procedure `restore_table_state`. A 
-whole database state might be restored with `restore_schema_state`.
-The result is written to another schema defined by the user. It can 
-defined as a VIEW (default) or a TABLE.
+A table state is restored with the procedure `restore_table_state`. 
+A whole database state might be restored with `restore_schema_state`.
+The result is written to another schema specified by the user. It 
+can be written to VIEWs (default) or TABLEs.
 
 How does this work? Well imagine a time line like this:
 
@@ -158,15 +155,15 @@ I need to know which entries were valid at the date I've requested (x).
 I look up the transaction_log table to see if I could find an entry for
 date x and table 'table_A'. No? Ok, I've rounded up the timestamp, 
 that's why. So dear transaction_log table, tell me what is the next 
-smaller timestamp you got for 'table_A'. 
+older timestamp you got for 'table_A'. 
 
 Timestamp 5. An UPDATE statement happened there. Get me all the rows 
-affected by this transaction from the audit_log table, but I'm only 
-interested in their audit_ids.
+affected by this transaction from the audit_log table (where table_name
+is 'table_A'), but I'm only interested in their audit_ids.
 
 Timestamp 4. Ah yes, an INSERT command. Again get me all the audit_ids 
 but leave out the ones I already have or to say it in a different way:
-leave out the ones that appear after this timestamp (>) until my queried
+Leave out the ones that appear after this timestamp (>) until my queried
 date (<=).
 
 Timestamp 3. An DELETE statement? I'm not interested in anything what 
@@ -182,25 +179,25 @@ IDs that appear during the last timestamps.
 #### 5.4.2. Generate entries from JSON logs
 
 Ok, now that I know, which entries were valid at date x let's perform the 
-PostgreSQL function json_populate_recordset on the column table_content
-in the audit_log table using the fetched audit_ids to transform JSON back
+PostgreSQL function `json_populate_recordset` on the column 'table_content'
+in the 'audit_log' table using the fetched audit_ids to transform JSON back
 to tables. But wait, in some rows I only got this `{"column_B":"old_value"}`. 
 Well of course, it's just the change not the complete row. What to do?
 
 There are two ways to receive the complete information. Either the row 
 still exists in our audited table or it has been deleted after date x 
 (which would cause a complete log as we remember). We query the table 
-against the audit_id and if nothing was found, we query the audit_log 
-table against all timestamps (descending order) to be found for the 
+against the audit_id and if nothing was found, we query the 'audit_log' 
+table against all timestamps (descending order) to be found by the 
 audit_id after our date x. 
 
 Depending on which way the requested result was found we start going 
 backwards again. Let's say we start at timestamp 8. We find a complete 
-record in the JSON format within the audit_log table. But has content
-and structure been the same like on date x?
+record in the JSON format within the 'audit_log' table. But has the 
+content and structure been the same like on date x? We'll find that out.
 
 Timestamp 7 does not appear in our query because it is connected to an
-INSERT operation which just adda new entries and audit_ids.
+INSERT operation which just adds new entries and audit_ids.
 
 But timestamp 6 might appear, if the record we want to reconstruct has
 been updated there. If so, we have to replace all elements of our JSON
@@ -241,24 +238,27 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
+* Have a more intelligent way to generate JSON records, e.g. if several
+  updates happend on the same column, I'm only interested in the oldest
+  version. Instead of updating a JSON object several times I should 
+  rather build up the object peace by peace. Get the first JSON diff 
+  after date x, proceed to the next diff, get it's elements but exclude
+  keys I've already collected etc. Any suggestions how to do this?
 * Have another table to store metadata of additional created schemas
   for former table / database states.
 * Being able to update views of restored tables. 
 * Develop a method to revert specific changes e.g. connected to a 
   transaction_id, date, user etc. I've already developped procedures
   to merge a whole schema into another schema, e.g. to be able to do 
-  a full rollback on a database (see `AUDIT_REVERT.sql`). But their
-  approach is a bit over the top when I just want to revert one 
+  a full rollback on a database (see `AUDIT_REVERT.sql`). But the
+  approach is a bit over the top if I just want to revert one 
   transaction.
-* Have a more intelligent way to generate JSON records, e.g. if several
-  updates happend on the same column, I'm only interested in the oldest
-  version.
 
   
 6. Developers
 -------------
 
-Felix Kunde <fkunde@virtualcitysystems.de>
+Felix Kunde
 
 
 7. Contact
@@ -271,6 +271,7 @@ fkunde@virtualcitysystems.de
 -----------------
 
 * Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
+* Christophe Pettus (PGX) --> recommend to only log changes
 * Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
 * Ollyc (Stackoverflow) --> Query to list all foreign keys of a table
 * Denis de Bernardy (Stackoverflow, mesoconcepts) --> Query to list all indexes of a table
