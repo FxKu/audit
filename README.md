@@ -123,16 +123,18 @@ value of some row of 'column_B' to 'new_value' the following entries will
 appear in the log tables:
 
 TRANSACTION_LOG
-ID  | tx_id    | operation | schema | table_name | relid    | timestamp               | user  | client address | applicatopn
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-100 | 11111111 | UPDATE    | public | table_A    | 22222222 | 2014-05-22 15:00:00.100 | felix | 192.168.0.0/32 | pgAdmin III 
+
+| ID  | tx_id    | operation | schema | table_name | relid    | timestamp               | user  | client address | applicatopn |
+| --- |:--------:|:---------:|:------:|:----------:|:--------:|:-----------------------:|:-----:|:--------------:|:-----------:|
+| 100 | 11111111 | UPDATE    | public | table_A    | 22222222 | 2014-05-22 15:00:00.100 | felix | 192.168.0.0/32 | pgAdmin III | 
 
 AUDIT_LOG
-ID  | tx_id    | relid    | timestamp               | audit_id | table_content
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-500 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 70       | {"column_B":"old_value"}
-501 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 71       | {"column_B":"old_value"}
-502 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 72       | {"column_B":"old_value"}
+
+| ID  | tx_id    | relid    | timestamp               | audit_id | table_content            |
+| --- |:--------:|:--------:|:-----------------------:|:--------:|:------------------------:|
+| 500 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 70       | {"column_B":"old_value"} |
+| 501 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 71       | {"column_B":"old_value"} |
+| 502 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 72       | {"column_B":"old_value"} |
 
 As you can see only the changes are logged. DELETE and TRUNCATE commands
 would cause logging of the complete rows while INSERTs would leave the
@@ -148,9 +150,9 @@ defined as a VIEW (default) or a TABLE.
 
 How does this work? Well imagine a time line like this:
 
-1''''''2'''3''4'''5'x''''6''7''8''''9 [Timestamps]
-I......U...D..I...U.|....U..I..D..now [Operations]
-|______|___|__|___|_|____|__|__|____|
+1''''''2'''3''4'''5'x''''6''7''8''''9 [Timestamps] <br/>
+I......U...D..I...U.|....U..I..D..now [Operations] <br/>
+|______|___|__|___|_|____|__|__|____| <br/>
 I = Insert, U = Update, D = Delete, x = the date I'm interested in
 
 
