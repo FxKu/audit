@@ -124,12 +124,12 @@ appear in the log tables:
 
 TRANSACTION_LOG
 ID  | tx_id    | operation | schema | table_name | relid    | timestamp               | user  | client address | applicatopn
------------------------------------------------------------------------------------------------------------------------------
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 100 | 11111111 | UPDATE    | public | table_A    | 22222222 | 2014-05-22 15:00:00.100 | felix | 192.168.0.0/32 | pgAdmin III 
 
 AUDIT_LOG
 ID  | tx_id    | relid    | timestamp               | audit_id | table_content
-------------------------------------------------------------------------------------------
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 500 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 70       | {"column_B":"old_value"}
 501 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 71       | {"column_B":"old_value"}
 502 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 72       | {"column_B":"old_value"}
@@ -148,9 +148,9 @@ defined as a VIEW (default) or a TABLE.
 
 How does this work? Well imagine a time line like this:
 
-1      2   3  4   5      6  7  8    9  Timestamps
-I      U   D  I   U x    U  I  D  now  Operations
-|______|___|__|___|_|____|__|__|____|  
+1''''''2'''3''4'''5'x''''6''7''8''''9 [Timestamps]
+I......U...D..I...U.|....U..I..D..now [Operations]
+|______|___|__|___|_|____|__|__|____|
 I = Insert, U = Update, D = Delete, x = the date I'm interested in
 
 
