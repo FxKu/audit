@@ -137,16 +137,25 @@ blank field for the 'table_content' column.
 
 ### 5.4. Restore a past state of your database
 
-A table state is restored with the procedure `restore_table_state`. 
-A whole database state might be restored with `restore_schema_state`.
+A table state is restored with the procedure `audit.restore_table_state`. 
+A whole database state might be restored with `audit.restore_schema_state`.
 The result is written to another schema specified by the user. It 
 can be written to VIEWs (default) or TABLEs.
 
 How does this work? Well imagine a time line like this:
 
-1______2___3__4___5______6__7__8____9 [Timestamps] <br/>
-I______U___D__I___U_x____U__I__D__now [Operations] <br/>
+1______2___3__4___5______6_7_8__9___10 [Timestamps] <br/>
+I______U___D__I___U_x____U_U_I__D__now [Operations] <br/>
 I = Insert, U = Update, D = Delete, x = the date I'm interested in
+
+Let me tell you how a record of one example row I'll use in the following
+looked liked at date x:
+
+TABLE_A
+
+| ID  | column_B  | column_C | audit_id |
+| --- |:---------:|:--------:|:--------:|
+| 1   | new_value | abc      | 70       |
 
 
 #### 5.4.1. Fetching audit_ids
@@ -167,48 +176,73 @@ Leave out the ones that appear after this timestamp (>) until my queried
 date (<=).
 
 Timestamp 3. An DELETE statement? I'm not interested in anything what 
-happened there. The rows were deleted an do not appear at my queried date. 
-The same would apply for TRUNCATE events.
+happened there. The rows were deleted an do not appear at my queried 
+date. The same would apply for TRUNCATE events.
 
 Timestamp 2. An UPDATE again. Do the same like at timestamp 4.
 
-Timestamp 1. OK, INSERT - I'm finally done. Again: Get the IDs, leave out 
-IDs that appear during the last timestamps.
+Timestamp 1. OK, INSERT - Again: Get the IDs, leave out IDs that appear 
+during the last timestamps.
 
 
 #### 5.4.2. Generate entries from JSON logs
 
-Ok, now that I know, which entries were valid at date x let's perform the 
-PostgreSQL function `json_populate_recordset` on the column 'table_content'
-in the 'audit_log' table using the fetched audit_ids to transform JSON back
-to tables. But wait, in some rows I only got this `{"column_B":"old_value"}`. 
-Well of course, it's just the change not the complete row. What to do?
+Ok, now that I know, which entries were valid at date x let's perform 
+the PostgreSQL function `json_populate_recordset` on the column 
+'table_content' in the 'audit_log' table using the fetched audit_ids to 
+transform JSON back to tables. But wait, in some rows I only got this 
+fragment `{"column_B":"old_value"}`. Well of course, it's just the 
+change not the complete row. What to do?
 
-There are two ways to receive the complete information. Either the row 
-still exists in our audited table or it has been deleted after date x 
-(which would cause a complete log as we remember). We query the table 
-against the audit_id and if nothing was found, we query the 'audit_log' 
-table against all timestamps (descending order) to be found by the 
-audit_id after our date x. 
+We have to check the timestamps after date x in ascending order and 
+collect each JSON diff to build up complete records of a past state. 
+If some values have changed multiple times corresponding key-value 
+pairs in newer JSON diffs are ignored as we are only interested in the
+oldest version. 
 
-Depending on which way the requested result was found we start going 
-backwards again. Let's say we start at timestamp 8. We find a complete 
-record in the JSON format within the 'audit_log' table. But has the 
-content and structure been the same like on date x? We'll find that out.
+So at timestamp 6 a first JSON diff is just fetched, e.g. 
+`{"column_B":"new_value"}`. 
 
-Timestamp 7 does not appear in our query because it is connected to an
-INSERT operation which just adds new entries and audit_ids.
+At timestamp 7 another update happened and a JSON diff is fetched 
+again, e.g. `{"column_B":"newer_value";"column_C":"abc"}`, which has 
+to be merged into the JSON log we've already got. The result would be
+`{"column_B":"new_value;"column_C":"abc"}`.
 
-But timestamp 6 might appear, if the record we want to reconstruct has
-been updated there. If so, we have to replace all elements of our JSON
-object that are found in the older JSON log e.g.
+Timestamp 8 does not appear in our timestamp query because it refers to 
+an INSERT operation which just adds new entries with their own audit_ids.
 
-JSON log `{"id":1;"column_B":"newest_value";"audit_id":70}` meets JSON 
-diff `{"column_B":"new_value"}` produces a new JSON log
-`{"id":1;"column_B":"new_value";"audit_id":70}`
+As for timestamp 9 some rows were deleted which logs the whole content
+of the affected tuples (as we remember from 5.3.). Finally, the 
+audited table itself is also queried against the audit_id because for 
+rows that have not been deleted the last JSON diff has to be generated 
+from the recent version of the table entry.
 
-If there would be more timestamps we would continue this procedure 
-until we have the correct state of our records for date x.
+The final result of our long journey would be the following JSON object:
+`{"column_B":"newer_value";"column_C":"abc";"id":1";"audit_id":70;"new_attribute":"extra"}`
+
+As you can see the ordering of columns is a little disarranged and 
+a new column found its way to our JSON log. Both problems do not matter
+when performing `json_populate_recordset` as it uses a table template 
+that defines the table structure. This leads to a another important 
+aspect of Audit.
+
+
+#### 5.4.3. Table templates
+
+If I would use 'table_A' as the template for `json_populate_recordset` 
+I would receive the correct order of columns but could not exclude new
+columns. I need to know the structure of 'table_A' at date x, too.
+
+Unfortunately Audit can yet not perform logging of DDL commands, like
+`ALTER TABLE [...]`. It forces the user to do a manual column backup. 
+By executing the procedure `audit.create_table_template` an empty copy
+of the audited table is created in the audit schema (concatenated with
+an internal ID). Every created table is documented (with timestamp) in 
+'audit.table_templates' which is queried when restoring former table 
+states.
+
+IMPORTANT: A table template has to be created before the audited table
+is altered.
 
 
 ### 5.5. Work with the past state
@@ -217,8 +251,8 @@ If past states were restored as tables they do not have primary keys
 or indexes assigned to them. References between tables are lost as well. 
 If the user wants to work on the restored table or database state - 
 like he would do with the recent state - he can use the procedures
-`pkey_table_state`, `fkey_table_state` and `index_table_state`. These 
-procedures create primary keys, foreign keys and indexes on behalf of 
+`audit.pkey_table_state`, `audit.fkey_table_state` and `audit.index_table_state`. 
+These procedures create primary keys, foreign keys and indexes on behalf of 
 the recent constraints defined in the certain schema (e.g. 'public'). 
 If table and/or database structures have changed fundamentally over time 
 it might not be possible to recreate constraints and indexes as their
@@ -238,12 +272,6 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
-* Have a more intelligent way to generate JSON records, e.g. if several
-  updates happend on the same column, I'm only interested in the oldest
-  version. Instead of updating a JSON object several times I should 
-  rather build up the object peace by peace. Get the first JSON diff 
-  after date x, proceed to the next diff, get it's elements but exclude
-  keys I've already collected etc. Any suggestions how to do this?
 * Have another table to store metadata of additional created schemas
   for former table / database states.
 * Being able to update views of restored tables. 

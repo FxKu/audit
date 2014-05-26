@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                       | Author
--- 0.2.0     2014-05-22   some intermediate version           FKun
+-- 0.2.0     2014-05-26   some intermediate version           FKun
 --
 
 /**********************************************************
@@ -371,7 +371,7 @@ BEGIN
     IF logged IS NULL THEN
       EXECUTE 'INSERT INTO audit.transaction_log
                  (id, internal_transaction_id, table_operation, schema_name, table_name, table_relid,
-                  columns, stmt_date, user_name, client_name, application_name) 
+                  stmt_date, user_name, client_name, application_name) 
                VALUES
                  (nextval(''audit.TRANSACTION_LOG_ID_SEQ''), txid_current(), $1, $2, $3, $4,
                   statement_timestamp()::timestamp, current_user, inet_client_addr(), 
@@ -472,14 +472,14 @@ LANGUAGE plpgsql;
 /**********************************************************
 * CREATE TABLE TEMPLATE
 *
-* To reproduce past tables from the JSON logs a template table
+* To reproduce past tables from the JSON logs a table template
 * is necessary. This is usually the audited table itself but
 * if its structure has been changed the previous version of the
 * table has to be recorded somehow.
 *
 * As for now this has to be done manually with create_table_template.
 * The functions creates an empty copy of the table that will be
-* changed which means it has to be executed before the change.
+* changed (which means it has to be executed before the change).
 * Every created copy is documented (with timestamp) in the 
 * table_templates table within the audit schema.
 **********************************************************/

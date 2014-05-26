@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                       | Author
--- 0.2.0     2014-05-22   some intermediate version           FKun
+-- 0.2.0     2014-05-26   some intermediate version           FKun
 --
 
 /**********************************************************
@@ -79,10 +79,10 @@ BEGIN
   END IF;
 
   EXECUTE 'SELECT audit.build_json(
-             array_agg(to_json(CASE WHEN new.key IS NULL THEN old.key ELSE new.key END)), 
+             array_agg(to_json(CASE WHEN old.key IS NULL THEN new.key ELSE old.key END)), 
              array_agg(CASE WHEN old.key IS NULL THEN new.value ELSE old.value END))
-           FROM json_each($1) new
-           FULL OUTER JOIN json_each($2) old
+           FROM json_each($1) old
+           FULL OUTER JOIN json_each($2) new
            ON old.key = new.key'
            INTO json_result USING json_log, json_diff;
 
@@ -102,25 +102,30 @@ $$
 DECLARE
   json_log JSON;
   json_diff JSON;
+  json_result JSON;
 BEGIN
-  -- check if a row still exists in the table and transform it into JSON
-  EXECUTE format('SELECT row_to_json(%I) FROM %I.%I WHERE audit_id = %L',
-                    original_table_name, original_schema_name, original_table_name, audit_log_id)
-                    INTO json_log;
-
-  -- now merge every change from now till the queried date recorded in audit_log into json_log
-  -- if a row has been deleted json_diff contains the complete record as JSON
-  -- and json_log is null (during the first loop)
+  -- merge every change recorded in audit_log from the queried date till now into json_result
+  -- json_result is null during the first loop
   FOR json_diff IN EXECUTE 'SELECT table_content FROM audit.audit_log
                              WHERE table_relid = $1::regclass::oid
                                AND audit_id = $2
                                AND stmt_date > $3
-                             ORDER BY stmt_date DESC'
+                             ORDER BY stmt_date ASC'
                              USING original_schema_name || '.' || original_table_name, audit_log_id, queried_date LOOP
-	json_log := audit.merge_json(json_log, json_diff);
+	json_result := audit.merge_json(json_result, json_diff);
   END LOOP;
 
-  RETURN json_log;
+  -- only if a row has been deleted json_result would be complete by now
+  -- thus check if a row still exists in the table and transform it into JSON to have the last json_diff
+  EXECUTE format('SELECT audit.merge_json(%L,row_to_json(%I)) FROM %I.%I WHERE audit_id = %L',
+                    json_result, original_table_name, original_schema_name, original_table_name, audit_log_id)
+                    INTO json_log;
+
+  IF json_log IS NULL THEN
+    RETURN json_result;
+  ELSE
+    RETURN json_log;
+  END IF;
 END;
 $$
 LANGUAGE plpgsql;
@@ -232,8 +237,8 @@ BEGIN
       -- if the table structure has changed over time we need to use a template table
       -- that we hopefully created with 'audit.create_table_template' before altering the table
       EXECUTE 'SELECT name FROM audit.table_templates
-                 WHERE original_schema = $1 AND original_table = $2 AND creation_date >= $3 
-                 ORDER BY creation_date ASC LIMIT 1'
+                 WHERE original_schema = $1 AND original_table = $2 AND creation_date <= $3 
+                 ORDER BY creation_date DESC LIMIT 1'
                  INTO template_table USING original_schema_name, original_table_name, queried_date;
 
       IF template_table IS NULL THEN
