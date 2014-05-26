@@ -188,7 +188,7 @@ LANGUAGE plpgsql;
 * RESTORE TABLE STATE
 *
 * See what the table looked like at a given date.
-* The table state will be produced in a separate schema.
+* The table state will be restored in a separate schema.
 * The user can choose if it will appear as a TABLE or VIEW.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION audit.restore_table_state(
@@ -248,7 +248,7 @@ BEGIN
         template_schema := 'audit';
       END IF;
 
-      -- let's go back in time - produce a table state at a given date
+      -- let's go back in time - restore a table state at a given date
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
         EXECUTE format('CREATE ' || target_table_type || ' %I.%I AS 
                           SELECT * FROM json_populate_recordset(null::%I.%I,
@@ -292,7 +292,7 @@ CREATE OR REPLACE FUNCTION audit.restore_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE 'SELECT audit.produce_table_state($1::timestamp, tablename, schemaname, $2, $3) FROM pg_tables 
+  EXECUTE 'SELECT audit.restore_table_state($1::timestamp, tablename, schemaname, $2, $3) FROM pg_tables 
              WHERE schemaname = $4 AND tablename <> ALL ($5)'
              USING queried_date, target_schema_name, target_table_type, original_schema_name, except_tables;
 END;
