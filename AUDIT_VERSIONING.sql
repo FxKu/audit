@@ -196,16 +196,17 @@ CREATE OR REPLACE FUNCTION audit.restore_table_state(
   original_table_name TEXT,
   original_schema_name TEXT,
   target_schema_name TEXT,
-  target_table_type TEXT DEFAULT 'VIEW'
+  target_table_type TEXT DEFAULT 'VIEW',
+  update_state INTEGER DEFAULT '0'
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
   is_set_schema INTEGER := 0;
   is_set_table INTEGER := 0;
-  tab_type TEXT;
   logged INTEGER := 0;
   template_schema TEXT;
   template_table TEXT;
+  replace_view TEXT := '';
 BEGIN
   -- test if target schema already exist
   EXECUTE 'SELECT 1 FROM information_schema.schemata WHERE schema_name = $1' INTO is_set_schema USING target_schema_name;
@@ -214,20 +215,22 @@ BEGIN
     EXECUTE format('CREATE SCHEMA %I', target_schema_name);
   END IF;
 
-  -- change target_table_type
-  IF target_table_type = 'TABLE' THEN
-    tab_type := 'BASE TABLE';
-  ELSE
-    tab_type := target_table_type;
-  END IF;
-
   -- test if table or view already exist in target schema
-  EXECUTE 'SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = $2 AND table_type = $3' 
-             INTO is_set_table USING original_table_name, target_schema_name, tab_type;
+  EXECUTE 'SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = $2 
+             AND (table_type = ''BASE TABLE'' OR table_type = ''VIEW'')' 
+             INTO is_set_table USING original_table_name, target_schema_name;
 
   IF is_set_table IS NOT NULL THEN
-    RAISE NOTICE '% ''%'' in schema ''%'' does already exist. Either delete the % or choose another name for a target schema.',
-                    upper(target_table_type), original_table_name, target_schema_name, upper(target_table_type);
+    IF update_state = 1 THEN
+      IF target_table_type = 'TABLE' THEN
+        RAISE EXCEPTION 'Only VIEWs are updatable.' USING HINT = 'Create another target schema when using TABLE as target table type.'; 
+      ELSE
+        replace_view := 'OR REPLACE ';
+      END IF;
+    ELSE
+      RAISE NOTICE 'Entity ''%'' in schema ''%'' does already exist. Either delete the table or choose another name or target schema.',
+                      original_table_name, target_schema_name;
+    END IF;
   ELSE
     -- check if logging entries exist in the audit_log table
     EXECUTE 'SELECT 1 FROM audit.transaction_log WHERE schema_name = $1 AND table_name = $2 LIMIT 1'
@@ -250,7 +253,7 @@ BEGIN
 
       -- let's go back in time - restore a table state at a given date
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
-        EXECUTE format('CREATE ' || target_table_type || ' %I.%I AS 
+        EXECUTE format('CREATE ' || replace_view || target_table_type || ' %I.%I AS 
                           SELECT * FROM json_populate_recordset(null::%I.%I,
                             (SELECT json_agg(audit.generate_log_entry(%L, f.log_id, %L, %L)) FROM
                               (SELECT audit.fetch_audit_ids(%L, stmt_date, 1, 1, %L, %L) AS log_id
@@ -288,13 +291,14 @@ CREATE OR REPLACE FUNCTION audit.restore_schema_state(
   original_schema_name TEXT,
   target_schema_name TEXT, 
   target_table_type TEXT DEFAULT 'VIEW',
-  except_tables TEXT[] DEFAULT '{}'
+  except_tables TEXT[] DEFAULT '{}',
+  update_state INTEGER DEFAULT '0'
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE 'SELECT audit.restore_table_state($1::timestamp, tablename, schemaname, $2, $3) FROM pg_tables 
-             WHERE schemaname = $4 AND tablename <> ALL ($5)'
-             USING queried_date, target_schema_name, target_table_type, original_schema_name, except_tables;
+  EXECUTE 'SELECT audit.restore_table_state($1::timestamp, tablename, schemaname, $2, $3, $4) FROM pg_tables 
+             WHERE schemaname = $5 AND tablename <> ALL ($6)'
+             USING queried_date, target_schema_name, target_table_type, update_state, original_schema_name, except_tables;
 END;
 $$
 LANGUAGE plpgsql;

@@ -137,12 +137,16 @@ blank field for the 'table_content' column.
 
 ### 5.4. Restore a past state of your database
 
-A table state is restored with the procedure `audit.restore_table_state`. 
+A table state is restored with the procedure `audit.restore_table_state
+('timestamp_x', 'name_of_audited_table', 'public', 'name_for_target_schema', 'VIEW', 0)`. 
 A whole database state might be restored with `audit.restore_schema_state`.
 The result is written to another schema specified by the user. It 
-can be written to VIEWs (default) or TABLEs.
+can be written to VIEWs (default) or TABLEs. If chosen VIEW you are able
+to execute the procedure again to update the target schema by passing a
+new timestamp. The old view(s) will be replaced. Simply specifiy the last
+parameter of the fuction (integer) as 1.
 
-How does this work? Well imagine a time line like this:
+How does the restoring work? Well, imagine a time line like this:
 
 1______2___3__4___5______6_7_8__9___10 [Timestamps] <br/>
 I______U___D__I___U_x____U_U_I__D__now [Operations] <br/>
@@ -274,7 +278,6 @@ for PostgreSQL.
 However, here are some plans I have for the near future:
 * Have another table to store metadata of additional created schemas
   for former table / database states.
-* Being able to update views of restored tables. 
 * Develop a method to revert specific changes e.g. connected to a 
   transaction_id, date, user etc. I've already developped procedures
   to merge a whole schema into another schema, e.g. to be able to do 
