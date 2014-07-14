@@ -435,7 +435,7 @@ BEGIN
   -- fill transaction_log table  
   EXECUTE 'INSERT INTO audit.transaction_log 
              (id, internal_transaction_id, table_operation, schema_name, table_name, table_relid,
-              columns, stmt_date, user_name, client_name, application_name) 
+              stmt_date, user_name, client_name, application_name) 
            VALUES (nextval(''audit.TRANSACTION_LOG_ID_SEQ''), $1, ''INSERT'', $2, $3, $4::regclass::oid,
              statement_timestamp()::timestamp, current_user, inet_client_addr(), 
              (SELECT setting FROM pg_settings WHERE name = ''application_name''))'
