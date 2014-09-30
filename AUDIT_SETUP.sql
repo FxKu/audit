@@ -390,14 +390,19 @@ BEGIN
 	ELSIF TG_OP = 'UPDATE' THEN
       EXECUTE 'SELECT audit.build_json(array_agg(to_json(old.key)), array_agg(old.value)) FROM json_each($1) old
                  LEFT OUTER JOIN json_each($2) new ON old.key = new.key
-                   WHERE old.value::text <> new.value::text OR new.key IS NULL' 
+                   WHERE old.value::text <> new.value::text OR new.key IS NULL
+		   HAVING array_agg(to_json(old.key)) IS NOT NULL
+		   AND array_agg(old.value) IS NOT NULL' 
                    INTO json_diff USING row_to_json(OLD), row_to_json(NEW);
+                   
+	IF json_diff IS NOT NULL THEN
 
       EXECUTE 'INSERT INTO audit.audit_log
                  (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
                VALUES 
                  (nextval(''audit.AUDIT_LOG_ID_SEQ''), txid_current(), $1, statement_timestamp()::timestamp, $2, $3)' 
                USING TG_RELID, NEW.audit_id, json_diff;
+        END IF;
 
 	ELSIF TG_OP = 'DELETE' THEN
       EXECUTE 'INSERT INTO audit.audit_log
