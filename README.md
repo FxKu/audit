@@ -1,10 +1,9 @@
 Audit
 =====
 
-~~*N*O*T*E*~~
+IMPORTANT NOTICE:
 I have created a new project called [pgMemento](https://github.com/pgMemento) and have copied the Audit repo. 
 Please contact me, if you want to contribute and I'll send you an invitation.
-~~*N*O*T*E*~~
 
 
 Audit is a versioning approach for PostgreSQL using PL/pgSQL functions
