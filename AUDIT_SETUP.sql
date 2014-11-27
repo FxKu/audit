@@ -67,7 +67,7 @@ CREATE SCHEMA audit;
 CREATE TABLES
 
 ***********************************************************/
--- transaction metadata is logged into the into the transaction_log table
+-- transaction metadata is logged into the transaction_log table
 DROP TABLE IF EXISTS audit.transaction_log CASCADE;
 CREATE TABLE audit.transaction_log
 (
